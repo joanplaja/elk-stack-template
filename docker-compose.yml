@@ -1,0 +1,85 @@
+services:
+
+  # The 'setup' service runs a one-off script which initializes users inside
+  # Elasticsearch — such as 'logstash_internal' and 'kibana_system'
+  # roles required by some of these users.
+  #
+  # This task only needs to be performed once, during the *initial* startup of
+  # the stack. Any subsequent run will reset the passwords
+  setup:
+    container_name: setup
+    build:
+      context: setup/
+    init: true
+    volumes:
+      - ./setup/entrypoint.sh:/entrypoint.sh:ro,Z
+      - ./setup/lib.sh:/lib.sh:ro,Z
+      - ./setup/roles:/roles:ro,Z
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-changeme}
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-changeme}
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-changeme}
+    depends_on:
+      - elasticsearch
+
+  app:
+    container_name: app
+    build: .
+    volumes:
+      - ./app.py:/app/app.py
+    environment:
+      LOGSTASH_HOST: logstash
+      LOGSTASH_PORT: 5999
+  
+  elasticsearch:
+    container_name: elasticsearch
+    image: elasticsearch:8.13.4
+    volumes:
+      - ./elasticsearch/config.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro,Z
+      - elasticsearch:/usr/share/elasticsearch/data:Z
+    ports:
+      - 9200:9200
+      - 9300:9300
+    environment:
+      node.name: elasticsearch
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      # Bootstrap password.
+      # Used to initialize the keystore during the initial startup of
+      # Elasticsearch. Ignored on subsequent runs.
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-changeme}
+      # Use single node discovery in order to disable production mode and avoid bootstrap checks.
+      # see: https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
+      discovery.type: single-node
+
+  logstash:
+    container_name: logstash
+    build:
+      context: logstash/
+    volumes:
+      - ./logstash/config.yml:/usr/share/logstash/config/logstash.yml:ro,Z
+      - ./logstash/pipeline.cnf:/usr/share/logstash/pipeline/logstash.conf:ro,Z
+    # ports:
+    #   - 5044:5044
+    #   - 50000:50000/tcp
+    #   - 50000:50000/udp
+    #   - 9600:9600
+    environment:
+      LS_JAVA_OPTS: -Xms256m -Xmx256m
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-changeme}
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    container_name: kibana
+    image: kibana:8.13.4
+    volumes:
+      - ./kibana/config.yml:/usr/share/kibana/config/kibana.yml:ro,Z
+    ports:
+      - 5601:5601
+    environment:
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-changeme}
+    depends_on:
+      - elasticsearch
+
+volumes:
+  elasticsearch:
