@@ -84,6 +84,7 @@ def generate_random_logs():
             logger.error(message, extra=extra)
 
         time.sleep(random.uniform(1, 5))
+        # time.sleep(100)
 
 
 if __name__ == "__main__":
